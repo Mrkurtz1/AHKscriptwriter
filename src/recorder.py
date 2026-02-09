@@ -7,11 +7,12 @@ from datetime import datetime
 from typing import Callable, Optional
 
 try:
-    from pynput import mouse
+    from pynput import mouse, keyboard as pynput_keyboard
     _PYNPUT_AVAILABLE = True
 except ImportError:
     _PYNPUT_AVAILABLE = False
     mouse = None  # type: ignore
+    pynput_keyboard = None  # type: ignore
 
 from src.models import (
     EventType,
@@ -56,6 +57,28 @@ except (ImportError, AttributeError, OSError):
             return "0x000000"
 
 
+# Platform-specific window-under-cursor detection (for ignore-own-clicks)
+try:
+    import ctypes as _ct
+
+    def _get_window_under_cursor(x: int, y: int) -> int:
+        """Return the HWND of the window under the given screen coordinates."""
+        import ctypes
+        point = ctypes.wintypes.POINT(x, y)
+        return ctypes.windll.user32.WindowFromPoint(point)
+
+    def _get_foreground_hwnd() -> int:
+        import ctypes
+        return ctypes.windll.user32.GetForegroundWindow()
+
+except (ImportError, AttributeError, OSError):
+    def _get_window_under_cursor(x: int, y: int) -> int:
+        return 0
+
+    def _get_foreground_hwnd() -> int:
+        return 0
+
+
 def _pynput_button_to_model(button) -> Optional[MouseButton]:
     """Convert a pynput Button to our MouseButton enum."""
     name = button.name if hasattr(button, "name") else str(button)
@@ -71,7 +94,7 @@ class Recorder:
     """Records mouse events and produces RecordedEvent objects.
 
     Handles click detection, drag detection (based on a pixel threshold),
-    and optional mouse movement recording.
+    optional mouse movement recording, and keystroke recording.
     """
 
     def __init__(
@@ -79,10 +102,12 @@ class Recorder:
         settings: AppSettings,
         on_event: Optional[Callable[[RecordedEvent], None]] = None,
         on_state_change: Optional[Callable[[RecordingState], None]] = None,
+        get_own_hwnd: Optional[Callable[[], int]] = None,
     ):
         self.settings = settings
         self.on_event = on_event
         self.on_state_change = on_state_change
+        self.get_own_hwnd = get_own_hwnd  # callback to get the app's own window handle
 
         self._state = RecordingState.IDLE
         self._session_counter = 0
@@ -97,8 +122,9 @@ class Recorder:
         self._last_move_time = 0.0
         self._last_move_pos = (0, 0)
 
-        # Listener
-        self._listener = None
+        # Listeners
+        self._mouse_listener = None
+        self._keyboard_listener = None
         self._lock = threading.Lock()
 
     @property
@@ -127,14 +153,14 @@ class Recorder:
             self._press_info.clear()
             self._drag_active.clear()
             self._set_state(RecordingState.RECORDING)
-            self._start_listener()
+            self._start_listeners()
 
         return self._current_session
 
     def stop_recording(self) -> Optional[Session]:
         """Stop recording and return the completed session."""
         with self._lock:
-            self._stop_listener()
+            self._stop_listeners()
             session = self._current_session
             self._set_state(RecordingState.IDLE)
         return session
@@ -156,25 +182,56 @@ class Recorder:
         if self.on_state_change:
             self.on_state_change(new_state)
 
-    def _start_listener(self):
-        """Start the pynput mouse listener."""
+    def _is_own_window(self, x: int, y: int) -> bool:
+        """Check if the click is on the tool's own window."""
+        if not self.settings.ignore_own_clicks:
+            return False
+        if not self.get_own_hwnd:
+            return False
+        try:
+            own_hwnd = self.get_own_hwnd()
+            if own_hwnd == 0:
+                return False
+            click_hwnd = _get_window_under_cursor(x, y)
+            if click_hwnd == 0:
+                return False
+            # Check if the clicked window is the same as or a child of our own window
+            import ctypes
+            ancestor_click = ctypes.windll.user32.GetAncestor(click_hwnd, 2)  # GA_ROOT
+            ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 2)
+            return ancestor_click == ancestor_own
+        except Exception:
+            return False
+
+    def _start_listeners(self):
+        """Start the pynput mouse and keyboard listeners."""
         if not _PYNPUT_AVAILABLE:
             raise RuntimeError(
                 "pynput is not available. Install it with: pip install pynput"
             )
-        self._stop_listener()
-        self._listener = mouse.Listener(
+        self._stop_listeners()
+
+        self._mouse_listener = mouse.Listener(
             on_click=self._on_click,
             on_move=self._on_move,
         )
-        self._listener.daemon = True
-        self._listener.start()
+        self._mouse_listener.daemon = True
+        self._mouse_listener.start()
 
-    def _stop_listener(self):
-        """Stop the pynput mouse listener."""
-        if self._listener is not None:
-            self._listener.stop()
-            self._listener = None
+        self._keyboard_listener = pynput_keyboard.Listener(
+            on_press=self._on_key_press,
+        )
+        self._keyboard_listener.daemon = True
+        self._keyboard_listener.start()
+
+    def _stop_listeners(self):
+        """Stop the pynput mouse and keyboard listeners."""
+        if self._mouse_listener is not None:
+            self._mouse_listener.stop()
+            self._mouse_listener = None
+        if self._keyboard_listener is not None:
+            self._keyboard_listener.stop()
+            self._keyboard_listener = None
 
     def _on_move(self, x: int, y: int):
         """Handle mouse movement."""
@@ -221,6 +278,10 @@ class Recorder:
         if self._state != RecordingState.RECORDING:
             return
 
+        # Filter out clicks on our own window
+        if pressed and self._is_own_window(x, y):
+            return
+
         mb = _pynput_button_to_model(button)
         if mb is None:
             return
@@ -263,6 +324,28 @@ class Recorder:
                 )
 
             self._emit_event(event)
+
+    def _on_key_press(self, key):
+        """Handle keyboard key press."""
+        if self._state != RecordingState.RECORDING:
+            return
+
+        # Convert key to string representation
+        try:
+            # Printable character keys
+            key_text = repr(key.char) if hasattr(key, 'char') and key.char else str(key)
+        except AttributeError:
+            key_text = str(key)
+
+        event = RecordedEvent(
+            timestamp=time.time(),
+            event_type=EventType.KEYSTROKE,
+            button=MouseButton.LEFT,  # unused for keystrokes
+            x1=self._current_pos[0],
+            y1=self._current_pos[1],
+            key_text=key_text,
+        )
+        self._emit_event(event)
 
     def _emit_event(self, event: RecordedEvent):
         """Add event to session and notify callback."""

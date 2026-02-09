@@ -2,11 +2,13 @@
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 
 class Toolbar(ttk.Frame):
     """Top toolbar with Start/Stop/Pause recording, Replay, and Settings buttons."""
+
+    ALL_MACROS_LABEL = "(All Macros)"
 
     def __init__(
         self,
@@ -58,6 +60,17 @@ class Toolbar(ttk.Frame):
         replay_label = ttk.Label(self, text="Replay:", font=("Segoe UI", 9))
         replay_label.pack(side=tk.LEFT, padx=(5, 5))
 
+        # Macro selector dropdown
+        self._macro_var = tk.StringVar(value=self.ALL_MACROS_LABEL)
+        self.macro_selector = ttk.Combobox(
+            self,
+            textvariable=self._macro_var,
+            values=[self.ALL_MACROS_LABEL],
+            state="readonly",
+            width=22,
+        )
+        self.macro_selector.pack(side=tk.LEFT, padx=2)
+
         self.replay_btn = ttk.Button(
             self, text="Replay", command=self._on_replay, width=8
         )
@@ -78,6 +91,22 @@ class Toolbar(ttk.Frame):
         )
         self.settings_btn.pack(side=tk.LEFT, padx=2)
 
+    def get_selected_macro(self) -> str:
+        """Return the selected macro name, or empty string for 'all'."""
+        val = self._macro_var.get()
+        if val == self.ALL_MACROS_LABEL:
+            return ""
+        return val
+
+    def update_macro_list(self, macro_names: List[str]):
+        """Update the macro selector dropdown with available macro names."""
+        values = [self.ALL_MACROS_LABEL] + macro_names
+        self.macro_selector["values"] = values
+        # Keep current selection if still valid
+        current = self._macro_var.get()
+        if current not in values:
+            self._macro_var.set(self.ALL_MACROS_LABEL)
+
     def set_recording_state(self, is_recording: bool, is_paused: bool = False):
         """Update button states based on recording state."""
         if is_recording:
@@ -85,6 +114,7 @@ class Toolbar(ttk.Frame):
             self.stop_btn.config(state=tk.NORMAL)
             self.pause_btn.config(state=tk.NORMAL)
             self.replay_btn.config(state=tk.DISABLED)
+            self.macro_selector.config(state=tk.DISABLED)
             if is_paused:
                 self.pause_btn.config(text="Resume")
             else:
@@ -94,6 +124,7 @@ class Toolbar(ttk.Frame):
             self.stop_btn.config(state=tk.DISABLED)
             self.pause_btn.config(state=tk.DISABLED, text="Pause")
             self.replay_btn.config(state=tk.NORMAL)
+            self.macro_selector.config(state="readonly")
 
     def set_replay_state(self, is_running: bool):
         """Update button states for replay."""
@@ -101,10 +132,12 @@ class Toolbar(ttk.Frame):
             self.replay_btn.config(state=tk.DISABLED)
             self.stop_replay_btn.config(state=tk.NORMAL)
             self.start_btn.config(state=tk.DISABLED)
+            self.macro_selector.config(state=tk.DISABLED)
         else:
             self.replay_btn.config(state=tk.NORMAL)
             self.stop_replay_btn.config(state=tk.DISABLED)
             self.start_btn.config(state=tk.NORMAL)
+            self.macro_selector.config(state="readonly")
 
     def _on_start(self):
         if self.on_start:

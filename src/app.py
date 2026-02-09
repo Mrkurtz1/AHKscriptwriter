@@ -17,6 +17,15 @@ from src.ui.status_bar import StatusBar
 from src.ui.settings_dialog import SettingsDialog
 
 
+def _get_tk_hwnd(root: tk.Tk) -> int:
+    """Get the Win32 HWND of the tkinter root window (Windows only)."""
+    try:
+        import ctypes
+        return ctypes.windll.user32.GetParent(root.winfo_id())
+    except Exception:
+        return 0
+
+
 class AHKMacroBuilderApp:
     """Main application class orchestrating the AHK Macro Builder."""
 
@@ -38,6 +47,7 @@ class AHKMacroBuilderApp:
             settings=self.settings,
             on_event=self._on_event_recorded,
             on_state_change=self._on_recording_state_change,
+            get_own_hwnd=lambda: _get_tk_hwnd(self.root),
         )
 
         self.replay_manager = ReplayManager(
@@ -92,6 +102,12 @@ class AHKMacroBuilderApp:
         self.code_generator = CodeGenerator(self.settings)
         self.replay_manager.ahk_exe_path = self.settings.ahk_exe_path
 
+    def _refresh_macro_list(self):
+        """Parse the code window and update the macro selector dropdown."""
+        script_text = self.code_window.get_text()
+        names = ReplayManager.extract_macro_names(script_text)
+        self.toolbar.update_macro_list(names)
+
     # ---- Recording ----
 
     def _start_recording(self):
@@ -112,6 +128,7 @@ class AHKMacroBuilderApp:
                 self.code_window.get_text(), session
             )
             self.code_window.set_text(new_code)
+            self._refresh_macro_list()
 
     def _pause_resume_recording(self):
         """Toggle pause/resume on the current recording."""
@@ -168,7 +185,7 @@ class AHKMacroBuilderApp:
     # ---- Replay ----
 
     def _start_replay(self):
-        """Replay the current code window content."""
+        """Replay the current code window content (or selected macro)."""
         if self.recorder.state != RecordingState.IDLE:
             messagebox.showwarning(
                 "Recording Active",
@@ -181,7 +198,11 @@ class AHKMacroBuilderApp:
             messagebox.showinfo("Empty Script", "There is no script to replay.")
             return
 
-        self.replay_manager.replay(script_text)
+        # Refresh macro list before replay in case user edited the code
+        self._refresh_macro_list()
+
+        selected_macro = self.toolbar.get_selected_macro()
+        self.replay_manager.replay(script_text, macro_name=selected_macro)
 
     def _stop_replay(self):
         """Stop the currently running replay."""

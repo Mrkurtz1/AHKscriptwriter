@@ -11,6 +11,37 @@ from src.models import (
 )
 from src.settings import AppSettings
 
+# Keys that need to be wrapped in braces for AHK v2 Send
+_AHK_SPECIAL_KEYS = {
+    "Key.space": " ",
+    "Key.enter": "{Enter}",
+    "Key.tab": "{Tab}",
+    "Key.backspace": "{Backspace}",
+    "Key.delete": "{Delete}",
+    "Key.esc": "{Escape}",
+    "Key.up": "{Up}",
+    "Key.down": "{Down}",
+    "Key.left": "{Left}",
+    "Key.right": "{Right}",
+    "Key.home": "{Home}",
+    "Key.end": "{End}",
+    "Key.page_up": "{PgUp}",
+    "Key.page_down": "{PgDn}",
+    "Key.insert": "{Insert}",
+    "Key.f1": "{F1}",
+    "Key.f2": "{F2}",
+    "Key.f3": "{F3}",
+    "Key.f4": "{F4}",
+    "Key.f5": "{F5}",
+    "Key.f6": "{F6}",
+    "Key.f7": "{F7}",
+    "Key.f8": "{F8}",
+    "Key.f9": "{F9}",
+    "Key.f10": "{F10}",
+    "Key.f11": "{F11}",
+    "Key.f12": "{F12}",
+}
+
 
 class CodeGenerator:
     """Generates valid AutoHotkey v2 code from recorded events."""
@@ -25,8 +56,16 @@ class CodeGenerator:
             f'CoordMode "Mouse", "{coord_mode.value}"',
             f'CoordMode "Pixel", "{coord_mode.value}"',
             'SetDefaultMouseSpeed 0',
-            "",
         ]
+
+        if coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT):
+            lines.append("")
+            lines.append(f"; Coordinate mode: \"{coord_mode.value}\" - coordinates are relative to the target window.")
+            lines.append("; WinActivate is used to ensure the correct window is focused before actions.")
+            if self.settings.target_window_title:
+                lines.append(f'; Target window: "{self.settings.target_window_title}"')
+
+        lines.append("")
         return "\n".join(lines)
 
     def generate_event_line(self, event: RecordedEvent, speed_mult: float = 1.0) -> str:
@@ -37,6 +76,8 @@ class CodeGenerator:
             return self._generate_drag(event, speed_mult)
         elif event.event_type == EventType.MOVE:
             return self._generate_move(event)
+        elif event.event_type == EventType.KEYSTROKE:
+            return self._generate_keystroke(event)
         return f"    ; Unknown event type: {event.event_type}"
 
     def _generate_click(self, event: RecordedEvent) -> str:
@@ -75,6 +116,22 @@ class CodeGenerator:
         """Generate a MouseMove statement."""
         return f"    MouseMove {event.x1}, {event.y1}"
 
+    def _generate_keystroke(self, event: RecordedEvent) -> str:
+        """Generate a Send statement for a keystroke."""
+        key = event.key_text or ""
+        ahk_key = _AHK_SPECIAL_KEYS.get(key)
+        if ahk_key is not None:
+            return f'    Send "{ahk_key}"'
+        # For printable characters, Send the character directly
+        # Strip quotes from pynput char representation like "'a'"
+        char = key.strip("'")
+        if len(char) == 1:
+            # Escape AHK special chars in Send: { } ! ^ + #
+            if char in "{}!^+#":
+                return f'    Send "{{{char}}}"'
+            return f'    Send "{char}"'
+        return f"    ; Unrecognized key: {key}"
+
     def _button_str(self, button: MouseButton) -> str:
         return button.value
 
@@ -88,6 +145,16 @@ class CodeGenerator:
             events = session.events
 
         lines = [f"{session.name}() {{"]
+
+        # In Window/Client mode, add WinActivate at the start of each subroutine
+        if session.coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT):
+            title = self.settings.target_window_title
+            if title:
+                lines.append(f'    WinActivate "{title}"  ; activate target window')
+                lines.append(f'    WinWaitActive "{title}",, 5  ; wait up to 5s')
+            else:
+                lines.append("    ; NOTE: Set a target window title in Settings for WinActivate")
+                lines.append('    ; WinActivate "YourWindowTitle"')
 
         if not events:
             lines.append("    ; No events recorded")
