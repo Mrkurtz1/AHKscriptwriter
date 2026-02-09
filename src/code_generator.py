@@ -146,20 +146,18 @@ class CodeGenerator:
 
         lines = [f"{session.name}() {{"]
 
-        # In Window/Client mode, add WinActivate at the start of each subroutine
-        if session.coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT):
-            title = self.settings.target_window_title
-            if title:
-                lines.append(f'    WinActivate "{title}"  ; activate target window')
-                lines.append(f'    WinWaitActive "{title}",, 5  ; wait up to 5s')
-            else:
-                lines.append("    ; NOTE: Set a target window title in Settings for WinActivate")
-                lines.append('    ; WinActivate "YourWindowTitle"')
-
         if not events:
             lines.append("    ; No events recorded")
         else:
+            use_window_activation = session.coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT)
+            if use_window_activation:
+                has_window_titles = any(event.window_title for event in events)
+                if not has_window_titles and not self.settings.target_window_title:
+                    lines.append("    ; NOTE: Set a target window title in Settings for WinActivate")
+                    lines.append('    ; WinActivate "YourWindowTitle"')
+
             prev_time = None
+            last_window_title = None
             for event in events:
                 # Insert Sleep between events based on time gaps
                 if prev_time is not None:
@@ -167,6 +165,12 @@ class CodeGenerator:
                     gap_ms = int(gap_ms * self.settings.replay_speed_multiplier)
                     if gap_ms > 50:
                         lines.append(f"    Sleep {gap_ms}")
+                if use_window_activation:
+                    title = event.window_title or self.settings.target_window_title
+                    if title and title != last_window_title:
+                        lines.append(f'    WinActivate "{title}"  ; activate target window')
+                        lines.append(f'    WinWaitActive "{title}",, 5  ; wait up to 5s')
+                        last_window_title = title
                 lines.append(self.generate_event_line(event))
                 prev_time = event.timestamp
 

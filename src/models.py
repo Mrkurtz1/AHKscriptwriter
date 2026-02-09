@@ -44,6 +44,7 @@ class RecordedEvent:
     color1: Optional[str] = None  # hex color e.g. "0xRRGGBB"
     color2: Optional[str] = None  # hex color for drag end point
     key_text: Optional[str] = None  # for KEYSTROKE events
+    window_title: Optional[str] = None  # captured window title for activation
     modifiers: list = field(default_factory=list)
 
     def description(self) -> str:
