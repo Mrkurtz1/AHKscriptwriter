@@ -71,6 +71,14 @@ try:
         import ctypes
         return ctypes.windll.user32.GetForegroundWindow()
 
+    def _get_root_hwnd(hwnd: int) -> int:
+        """Return the top-level window HWND for a given handle."""
+        import ctypes
+        if hwnd == 0:
+            return 0
+        root = ctypes.windll.user32.GetAncestor(hwnd, 2)  # GA_ROOT
+        return root if root else hwnd
+
     def _get_window_title(hwnd: int) -> str:
         """Return the window title for the given HWND."""
         import ctypes
@@ -89,6 +97,9 @@ except (ImportError, AttributeError, OSError):
 
     def _get_foreground_hwnd() -> int:
         return 0
+
+    def _get_root_hwnd(hwnd: int) -> int:
+        return hwnd
 
     def _get_window_title(hwnd: int) -> str:
         return ""
@@ -238,6 +249,7 @@ class Recorder:
         hwnd = _get_foreground_hwnd() if prefer_foreground else _get_window_under_cursor(x, y)
         if hwnd == 0:
             hwnd = _get_foreground_hwnd()
+        hwnd = _get_root_hwnd(hwnd)
         if self._is_own_hwnd(hwnd):
             return ""
         return _get_window_title(hwnd)
