@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import List, Optional
 
-from src.models import RecordedEvent, RecordingState, Session
+from src.models import CoordMode, RecordedEvent, RecordingState, Session
 from src.settings import SettingsManager
 from src.recorder import Recorder
 from src.code_generator import CodeGenerator
@@ -114,6 +114,22 @@ class AHKMacroBuilderApp:
         """Start a new recording session."""
         session = self.recorder.start_recording()
         self.sessions.append(session)
+
+        # In Window/Client mode, inform the user which window was captured
+        if session.coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT):
+            if session.target_window_title:
+                self.status_bar.set_replay_status(
+                    f'Target: "{session.target_window_title}"'
+                )
+            else:
+                messagebox.showwarning(
+                    "No Target Window",
+                    "Recording in Window mode but no target window was detected.\n\n"
+                    "The foreground window title could not be read. Please set\n"
+                    'a "Target window title" in Settings, or make sure the\n'
+                    "target application is focused before clicking Start."
+                )
+
         self._recording_start_time = time.time()
         self._update_timer()
 

@@ -49,7 +49,7 @@ class CodeGenerator:
     def __init__(self, settings: AppSettings):
         self.settings = settings
 
-    def generate_header(self, coord_mode: CoordMode) -> str:
+    def generate_header(self, coord_mode: CoordMode, target_window: str = "") -> str:
         """Generate the AHK v2 script header with CoordMode and directives."""
         lines = [
             "#Requires AutoHotkey v2.0",
@@ -59,11 +59,12 @@ class CodeGenerator:
         ]
 
         if coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT):
+            title = target_window or self.settings.target_window_title
             lines.append("")
             lines.append(f"; Coordinate mode: \"{coord_mode.value}\" - coordinates are relative to the target window.")
-            lines.append("; WinActivate is used to ensure the correct window is focused before actions.")
-            if self.settings.target_window_title:
-                lines.append(f'; Target window: "{self.settings.target_window_title}"')
+            lines.append("; WinActivate is called at the start of each macro to focus the correct window.")
+            if title:
+                lines.append(f'; Target window: "{title}"')
 
         lines.append("")
         return "\n".join(lines)
@@ -148,12 +149,16 @@ class CodeGenerator:
 
         # In Window/Client mode, add WinActivate at the start of each subroutine
         if session.coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT):
-            title = self.settings.target_window_title
+            # Use per-session captured title, fall back to global settings
+            title = session.target_window_title or self.settings.target_window_title
             if title:
-                lines.append(f'    WinActivate "{title}"  ; activate target window')
-                lines.append(f'    WinWaitActive "{title}",, 5  ; wait up to 5s')
+                lines.append(f'    ; Window-relative mode: activating "{title}"')
+                lines.append(f'    WinActivate "{title}"')
+                lines.append(f'    WinWaitActive "{title}",, 5  ; wait up to 5s for window')
             else:
-                lines.append("    ; NOTE: Set a target window title in Settings for WinActivate")
+                lines.append("    ; WARNING: No target window title was detected or configured.")
+                lines.append("    ; Set a target window title in Settings, or ensure the target")
+                lines.append("    ; window is in the foreground when you start recording.")
                 lines.append('    ; WinActivate "YourWindowTitle"')
 
         if not events:
@@ -179,7 +184,8 @@ class CodeGenerator:
             return self.generate_header(self.settings.get_coord_mode())
 
         coord_mode = sessions[0].coord_mode
-        parts = [self.generate_header(coord_mode)]
+        target_window = sessions[0].target_window_title
+        parts = [self.generate_header(coord_mode, target_window=target_window)]
 
         for session in sessions:
             parts.append(self.generate_subroutine(session))
@@ -200,7 +206,9 @@ class CodeGenerator:
         subroutine = self.generate_subroutine(session)
 
         if not existing_script.strip():
-            header = self.generate_header(session.coord_mode)
+            header = self.generate_header(
+                session.coord_mode, target_window=session.target_window_title
+            )
             return f"{header}\n{subroutine}\n"
 
         return f"{existing_script}\n\n{subroutine}\n"

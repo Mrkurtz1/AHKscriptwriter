@@ -15,6 +15,7 @@ except ImportError:
     pynput_keyboard = None  # type: ignore
 
 from src.models import (
+    CoordMode,
     EventType,
     MouseButton,
     RecordedEvent,
@@ -58,6 +59,7 @@ except (ImportError, AttributeError, OSError):
 
 
 # Platform-specific window-under-cursor detection (for ignore-own-clicks)
+# and foreground window title detection (for Window mode auto-capture)
 try:
     import ctypes as _ct
 
@@ -71,12 +73,28 @@ try:
         import ctypes
         return ctypes.windll.user32.GetForegroundWindow()
 
+    def get_foreground_window_title() -> str:
+        """Return the title of the current foreground window."""
+        import ctypes
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            return ""
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+        if length == 0:
+            return ""
+        buf = ctypes.create_unicode_buffer(length + 1)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+        return buf.value
+
 except (ImportError, AttributeError, OSError):
     def _get_window_under_cursor(x: int, y: int) -> int:
         return 0
 
     def _get_foreground_hwnd() -> int:
         return 0
+
+    def get_foreground_window_title() -> str:
+        return ""
 
 
 def _pynput_button_to_model(button) -> Optional[MouseButton]:
@@ -145,10 +163,23 @@ class Recorder:
             else:
                 name = f"{self.settings.macro_prefix}_{self._session_counter:03d}"
 
+            coord_mode = self.settings.get_coord_mode()
+
+            # In Window/Client mode, capture the target window title
+            # Use manual override from settings if provided, otherwise auto-detect
+            if coord_mode in (CoordMode.WINDOW, CoordMode.CLIENT):
+                if self.settings.target_window_title:
+                    target_title = self.settings.target_window_title
+                else:
+                    target_title = get_foreground_window_title()
+            else:
+                target_title = ""
+
             self._current_session = Session(
                 id=self._session_counter,
                 name=name,
-                coord_mode=self.settings.get_coord_mode(),
+                coord_mode=coord_mode,
+                target_window_title=target_title,
             )
             self._press_info.clear()
             self._drag_active.clear()

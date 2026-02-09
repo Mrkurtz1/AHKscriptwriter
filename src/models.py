@@ -71,6 +71,7 @@ class Session:
     created_at: float = field(default_factory=time.time)
     events: list = field(default_factory=list)
     coord_mode: CoordMode = CoordMode.SCREEN
+    target_window_title: str = ""  # captured at record time for Window/Client mode
 
     def add_event(self, event: RecordedEvent):
         self.events.append(event)
