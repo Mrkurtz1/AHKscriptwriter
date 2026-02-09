@@ -166,7 +166,14 @@ class CodeGenerator:
                     if gap_ms > 50:
                         lines.append(f"    Sleep {gap_ms}")
                 if use_window_activation:
-                    title = event.window_title or self.settings.target_window_title
+                    title = None
+                    if event.window_title:
+                        title = event.window_title
+                    elif last_window_title:
+                        title = last_window_title
+                    elif not has_window_titles:
+                        title = self.settings.target_window_title
+
                     if title and title != last_window_title:
                         lines.append(f'    WinActivate "{title}"  ; activate target window')
                         lines.append(f'    WinWaitActive "{title}",, 5  ; wait up to 5s')
