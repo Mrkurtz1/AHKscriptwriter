@@ -20,6 +20,12 @@ class AppSettings:
     drag_threshold_px: int = 10
     coord_mode: str = "Screen"  # Screen / Window / Client
 
+    # Window targeting
+    target_window_title: str = ""  # for Window/Client coord mode
+
+    # Filtering
+    ignore_own_clicks: bool = True  # don't record clicks on the tool's own window
+
     # Color capture
     color_format: str = "0x"  # "0x" for 0xRRGGBB, "#" for #RRGGBB
 

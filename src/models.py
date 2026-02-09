@@ -10,6 +10,7 @@ class EventType(Enum):
     CLICK = "Click"
     DRAG = "Drag"
     MOVE = "Move"
+    KEYSTROKE = "Key"
 
 
 class MouseButton(Enum):
@@ -42,6 +43,7 @@ class RecordedEvent:
     y2: Optional[int] = None
     color1: Optional[str] = None  # hex color e.g. "0xRRGGBB"
     color2: Optional[str] = None  # hex color for drag end point
+    key_text: Optional[str] = None  # for KEYSTROKE events
     modifiers: list = field(default_factory=list)
 
     def description(self) -> str:
@@ -56,6 +58,8 @@ class RecordedEvent:
             )
         elif self.event_type == EventType.MOVE:
             return f"Move to ({self.x1}, {self.y1})"
+        elif self.event_type == EventType.KEYSTROKE:
+            return f"Key: {self.key_text or '?'}"
         return "Unknown event"
 
 

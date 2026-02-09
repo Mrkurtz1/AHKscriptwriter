@@ -1,11 +1,12 @@
 """Replay manager - executes AHK v2 scripts via AutoHotkey.exe."""
 
 import os
+import re
 import subprocess
 import tempfile
 import threading
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 
 class ReplayStatus(Enum):
@@ -71,8 +72,17 @@ class ReplayManager:
 
         return ""
 
-    def replay(self, script_text: str):
-        """Execute the given AHK v2 script text asynchronously."""
+    @staticmethod
+    def extract_macro_names(script_text: str) -> List[str]:
+        """Parse function names from the script text (e.g. Macro_001, Macro_20260209_120000)."""
+        return re.findall(r'^(\w+)\(\)\s*\{', script_text, re.MULTILINE)
+
+    def replay(self, script_text: str, macro_name: str = ""):
+        """Execute the given AHK v2 script text asynchronously.
+
+        If macro_name is provided, only that function is called.
+        If macro_name is empty, all defined macros are called in order.
+        """
         if self._status == ReplayStatus.RUNNING:
             self.stop()
 
@@ -84,8 +94,20 @@ class ReplayManager:
             )
             return
 
+        # Build the final script: definitions + call(s)
+        names = self.extract_macro_names(script_text)
+        if macro_name and macro_name in names:
+            call_block = f"\n{macro_name}()\n"
+        elif names:
+            call_block = "\n" + "\n".join(f"{n}()" for n in names) + "\n"
+        else:
+            # No functions found - run as-is (maybe raw statements)
+            call_block = ""
+
+        final_script = script_text + call_block
+
         self._thread = threading.Thread(
-            target=self._run_script, args=(ahk_path, script_text), daemon=True
+            target=self._run_script, args=(ahk_path, final_script), daemon=True
         )
         self._thread.start()
 

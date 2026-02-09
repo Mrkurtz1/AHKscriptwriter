@@ -52,11 +52,35 @@ class SettingsDialog(tk.Toplevel):
         coord_combo.grid(row=row, column=1, sticky=tk.W, pady=5, padx=(10, 0))
 
         row += 1
+        ttk.Label(rec_frame, text="Target window title:").grid(
+            row=row, column=0, sticky=tk.W, pady=5
+        )
+        self._target_window_var = tk.StringVar()
+        ttk.Entry(rec_frame, textvariable=self._target_window_var, width=25).grid(
+            row=row, column=1, sticky=tk.W, pady=5, padx=(10, 0)
+        )
+
+        row += 1
+        ttk.Label(
+            rec_frame,
+            text="(Used for WinActivate in Window/Client mode)",
+            foreground="gray",
+        ).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+
+        row += 1
         self._record_moves_var = tk.BooleanVar()
         ttk.Checkbutton(
             rec_frame,
             text="Record mouse movements",
             variable=self._record_moves_var,
+        ).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
+
+        row += 1
+        self._ignore_own_clicks_var = tk.BooleanVar()
+        ttk.Checkbutton(
+            rec_frame,
+            text="Ignore clicks on this tool's window",
+            variable=self._ignore_own_clicks_var,
         ).grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=5)
 
         row += 1
@@ -164,7 +188,9 @@ class SettingsDialog(tk.Toplevel):
     def _load_values(self):
         """Populate UI fields from current settings."""
         self._coord_mode_var.set(self.settings.coord_mode)
+        self._target_window_var.set(self.settings.target_window_title)
         self._record_moves_var.set(self.settings.record_mouse_moves)
+        self._ignore_own_clicks_var.set(self.settings.ignore_own_clicks)
         self._move_sample_var.set(self.settings.mouse_move_sample_ms)
         self._drag_threshold_var.set(self.settings.drag_threshold_px)
         self._naming_var.set(self.settings.macro_naming)
@@ -183,7 +209,9 @@ class SettingsDialog(tk.Toplevel):
     def _on_save(self):
         """Apply settings and close."""
         self.settings.coord_mode = self._coord_mode_var.get()
+        self.settings.target_window_title = self._target_window_var.get()
         self.settings.record_mouse_moves = self._record_moves_var.get()
+        self.settings.ignore_own_clicks = self._ignore_own_clicks_var.get()
         self.settings.mouse_move_sample_ms = self._move_sample_var.get()
         self.settings.drag_threshold_px = self._drag_threshold_var.get()
         self.settings.macro_naming = self._naming_var.get()
