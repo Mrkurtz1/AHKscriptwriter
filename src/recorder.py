@@ -71,12 +71,27 @@ try:
         import ctypes
         return ctypes.windll.user32.GetForegroundWindow()
 
+    def _get_window_title(hwnd: int) -> str:
+        """Return the window title for the given HWND."""
+        import ctypes
+        if hwnd == 0:
+            return ""
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+        if length == 0:
+            return ""
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buffer, length + 1)
+        return buffer.value
+
 except (ImportError, AttributeError, OSError):
     def _get_window_under_cursor(x: int, y: int) -> int:
         return 0
 
     def _get_foreground_hwnd() -> int:
         return 0
+
+    def _get_window_title(hwnd: int) -> str:
+        return ""
 
 
 def _pynput_button_to_model(button) -> Optional[MouseButton]:
@@ -202,6 +217,36 @@ class Recorder:
             return ancestor_click == ancestor_own
         except Exception:
             return False
+
+    def _is_own_hwnd(self, hwnd: int) -> bool:
+        """Check if a HWND refers to this tool's window."""
+        if not self.get_own_hwnd or hwnd == 0:
+            return False
+        try:
+            own_hwnd = self.get_own_hwnd()
+            if own_hwnd == 0:
+                return False
+            import ctypes
+            ancestor_hwnd = ctypes.windll.user32.GetAncestor(hwnd, 2)  # GA_ROOT
+            ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 2)
+            return ancestor_hwnd == ancestor_own
+        except Exception:
+            return False
+
+    def _maybe_capture_target_window(self, event: RecordedEvent):
+        """Capture the target window title for Window/Client coord mode."""
+        if self.settings.coord_mode not in ("Window", "Client"):
+            return
+        if self.settings.target_window_title:
+            return
+        hwnd = _get_window_under_cursor(event.x1, event.y1)
+        if hwnd == 0:
+            hwnd = _get_foreground_hwnd()
+        if self._is_own_hwnd(hwnd):
+            return
+        title = _get_window_title(hwnd)
+        if title:
+            self.settings.target_window_title = title
 
     def _start_listeners(self):
         """Start the pynput mouse and keyboard listeners."""
@@ -349,6 +394,7 @@ class Recorder:
 
     def _emit_event(self, event: RecordedEvent):
         """Add event to session and notify callback."""
+        self._maybe_capture_target_window(event)
         if self._current_session:
             self._current_session.add_event(event)
         if self.on_event:
