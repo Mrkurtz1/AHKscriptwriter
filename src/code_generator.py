@@ -43,6 +43,11 @@ _AHK_SPECIAL_KEYS = {
 }
 
 
+def _escape_ahk_title(title: str) -> str:
+    """Escape double quotes in a window title for AHK v2 string literals."""
+    return title.replace('"', '`"')
+
+
 class CodeGenerator:
     """Generates valid AutoHotkey v2 code from recorded events."""
 
@@ -175,8 +180,9 @@ class CodeGenerator:
                         title = self.settings.target_window_title
 
                     if title and title != last_window_title:
-                        lines.append(f'    WinActivate "{title}"  ; activate target window')
-                        lines.append(f'    WinWaitActive "{title}",, 5  ; wait up to 5s')
+                        escaped = _escape_ahk_title(title)
+                        lines.append(f'    WinActivate "{escaped}"  ; activate target window')
+                        lines.append(f'    WinWaitActive "{escaped}",, 5  ; wait up to 5s')
                         last_window_title = title
                 lines.append(self.generate_event_line(event))
                 prev_time = event.timestamp
