@@ -91,6 +91,29 @@ try:
         ctypes.windll.user32.GetWindowTextW(hwnd, buffer, length + 1)
         return buffer.value
 
+    def _get_window_origin(hwnd: int) -> tuple:
+        """Return (left, top) screen position of the window's outer frame."""
+        import ctypes
+        if hwnd == 0:
+            return (0, 0)
+        rect = ctypes.wintypes.RECT()
+        if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return (0, 0)
+        return (rect.left, rect.top)
+
+    def _screen_to_window(hwnd: int, x: int, y: int) -> tuple:
+        """Convert screen coordinates to window-relative coordinates."""
+        left, top = _get_window_origin(hwnd)
+        return (x - left, y - top)
+
+    def _screen_to_client(hwnd: int, x: int, y: int) -> tuple:
+        """Convert screen coordinates to client-area-relative coordinates."""
+        import ctypes
+        point = ctypes.wintypes.POINT(x, y)
+        if not ctypes.windll.user32.ScreenToClient(hwnd, ctypes.byref(point)):
+            return (x, y)
+        return (point.x, point.y)
+
 except (ImportError, AttributeError, OSError):
     def _get_window_under_cursor(x: int, y: int) -> int:
         return 0
@@ -103,6 +126,15 @@ except (ImportError, AttributeError, OSError):
 
     def _get_window_title(hwnd: int) -> str:
         return ""
+
+    def _get_window_origin(hwnd: int) -> tuple:
+        return (0, 0)
+
+    def _screen_to_window(hwnd: int, x: int, y: int) -> tuple:
+        return (x, y)
+
+    def _screen_to_client(hwnd: int, x: int, y: int) -> tuple:
+        return (x, y)
 
 
 def _pynput_button_to_model(button) -> Optional[MouseButton]:
@@ -244,26 +276,51 @@ class Recorder:
         except Exception:
             return False
 
-    def _get_active_window_title(self, x: int, y: int, prefer_foreground: bool) -> str:
-        """Resolve the window title for a coordinate or foreground window."""
-        hwnd = _get_foreground_hwnd() if prefer_foreground else _get_window_under_cursor(x, y)
+    def _apply_window_context(self, event: RecordedEvent):
+        """Capture window title and convert coordinates for Window/Client mode.
+
+        For Window or Client coordinate modes this method:
+        1. Resolves the target window HWND for this event.
+        2. Records the window title on the event so the code generator can
+           emit WinActivate when the active window changes.
+        3. Converts the event's screen coordinates to window-relative or
+           client-relative values so the generated AHK script uses the
+           correct offset regardless of where the window sits on screen.
+        """
+        if self.settings.coord_mode not in ("Window", "Client"):
+            return
+
+        prefer_foreground = event.event_type == EventType.KEYSTROKE
+
+        # Resolve the target window HWND
+        hwnd = (
+            _get_foreground_hwnd()
+            if prefer_foreground
+            else _get_window_under_cursor(event.x1, event.y1)
+        )
         if hwnd == 0:
             hwnd = _get_foreground_hwnd()
         hwnd = _get_root_hwnd(hwnd)
-        if self._is_own_hwnd(hwnd):
-            return ""
-        return _get_window_title(hwnd)
 
-    def _apply_window_title(self, event: RecordedEvent):
-        """Capture window title per event for Window/Client coord mode."""
-        if self.settings.coord_mode not in ("Window", "Client"):
+        if hwnd == 0 or self._is_own_hwnd(hwnd):
             return
-        prefer_foreground = event.event_type == EventType.KEYSTROKE
-        title = self._get_active_window_title(event.x1, event.y1, prefer_foreground)
+
+        # Capture window title
+        title = _get_window_title(hwnd)
         if title:
             event.window_title = title
             if not self.settings.target_window_title:
                 self.settings.target_window_title = title
+
+        # Convert coordinates from screen to window-relative
+        if self.settings.coord_mode == "Window":
+            convert = _screen_to_window
+        else:  # Client
+            convert = _screen_to_client
+
+        event.x1, event.y1 = convert(hwnd, event.x1, event.y1)
+        if event.x2 is not None and event.y2 is not None:
+            event.x2, event.y2 = convert(hwnd, event.x2, event.y2)
 
     def _start_listeners(self):
         """Start the pynput mouse and keyboard listeners."""
@@ -411,7 +468,7 @@ class Recorder:
 
     def _emit_event(self, event: RecordedEvent):
         """Add event to session and notify callback."""
-        self._apply_window_title(event)
+        self._apply_window_context(event)
         if self._current_session:
             self._current_session.add_event(event)
         if self.on_event:
