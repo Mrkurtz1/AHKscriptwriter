@@ -59,6 +59,9 @@ class AHKMacroBuilderApp:
         self._recording_start_time: Optional[float] = None
         self._timer_after_id: Optional[str] = None
 
+        # Window activation tracking for event log
+        self._last_log_window_title: Optional[str] = None
+
         self._build_ui()
         self._apply_settings()
 
@@ -112,6 +115,7 @@ class AHKMacroBuilderApp:
 
     def _start_recording(self):
         """Start a new recording session."""
+        self._last_log_window_title = None
         session = self.recorder.start_recording()
         self.sessions.append(session)
         self._recording_start_time = time.time()
@@ -144,6 +148,11 @@ class AHKMacroBuilderApp:
 
     def _handle_recorded_event(self, event: RecordedEvent):
         """Process a recorded event on the main thread."""
+        # Show window activation in event log when the active window changes
+        if event.window_title and event.window_title != self._last_log_window_title:
+            self.event_log.add_window_activation(event.window_title)
+            self._last_log_window_title = event.window_title
+
         self.event_log.add_event(event)
 
         # Update status bar

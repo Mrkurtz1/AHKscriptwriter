@@ -40,6 +40,23 @@ class EventLogPanel(ttk.Frame):
 
         self._event_count = 0
 
+    def add_window_activation(self, title: str):
+        """Insert a window activation marker in the log."""
+        self._event_count += 1
+        self.tree.insert(
+            "",
+            tk.END,
+            values=(
+                self._event_count,
+                "Window",
+                f"Activated: {title}",
+            ),
+        )
+        # Auto-scroll to bottom
+        children = self.tree.get_children()
+        if children:
+            self.tree.see(children[-1])
+
     def add_event(self, event: RecordedEvent):
         """Append an event to the log."""
         self._event_count += 1
