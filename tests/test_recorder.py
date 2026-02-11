@@ -277,3 +277,60 @@ class TestKeystrokeUseForeground:
         # Should have called foreground directly, not window_under_cursor
         mock_fg.assert_called()
         assert event.window_title == "Editor"
+
+
+# ---------------------------------------------------------------------------
+# Nested frame / owned-window resolution
+# ---------------------------------------------------------------------------
+
+class TestNestedFrameResolution:
+    """When clicking inside a frame (owned sub-window), coordinates should
+    be relative to the main application window, not the frame."""
+
+    @patch("src.recorder._get_window_title", return_value="MainApp")
+    @patch("src.recorder._screen_to_window", return_value=(200, 100))
+    @patch("src.recorder._get_root_hwnd", return_value=1000)
+    @patch("src.recorder._get_foreground_hwnd", return_value=1000)
+    @patch("src.recorder._get_window_under_cursor", return_value=5555)
+    def test_child_control_resolves_to_root_owner(self, mock_wuc, mock_fg,
+                                                    mock_root, mock_convert,
+                                                    mock_title):
+        """WindowFromPoint returns a child control (5555), but _get_root_hwnd
+        should resolve it up to the main application window (1000) so that
+        coordinates are relative to the outer window, not an inner frame."""
+        rec = _make_recorder(coord_mode="Window")
+        event = _make_event(x1=700, y1=500)
+
+        rec._apply_window_context(event)
+
+        # _get_root_hwnd should have been called with the child hwnd
+        mock_root.assert_called_once_with(5555)
+        # Coordinates should be converted relative to root owner (1000)
+        mock_convert.assert_called_once_with(1000, 700, 500)
+        assert event.x1 == 200
+        assert event.y1 == 100
+        assert event.window_title == "MainApp"
+
+    @patch("src.recorder._get_window_title", return_value="MainApp")
+    @patch("src.recorder._screen_to_window", side_effect=[(200, 100), (400, 300)])
+    @patch("src.recorder._get_root_hwnd", return_value=1000)
+    @patch("src.recorder._get_foreground_hwnd", return_value=1000)
+    @patch("src.recorder._get_window_under_cursor", return_value=5555)
+    def test_drag_in_frame_resolves_both_coords_to_root_owner(
+        self, mock_wuc, mock_fg, mock_root, mock_convert, mock_title
+    ):
+        """Drag events inside a frame should convert both start and end
+        coordinates relative to the main application window."""
+        rec = _make_recorder(coord_mode="Window")
+        event = _make_event(
+            event_type=EventType.DRAG,
+            x1=700, y1=500, x2=900, y2=700,
+        )
+
+        rec._apply_window_context(event)
+
+        assert mock_convert.call_count == 2
+        assert event.x1 == 200
+        assert event.y1 == 100
+        assert event.x2 == 400
+        assert event.y2 == 300
