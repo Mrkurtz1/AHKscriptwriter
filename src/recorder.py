@@ -72,11 +72,18 @@ try:
         return ctypes.windll.user32.GetForegroundWindow()
 
     def _get_root_hwnd(hwnd: int) -> int:
-        """Return the top-level window HWND for a given handle."""
+        """Return the top-level owner window HWND for a given handle.
+
+        Uses GA_ROOTOWNER (3) instead of GA_ROOT (2) so that owned
+        sub-windows / frames are resolved to the main application
+        window.  GA_ROOT only walks the *parent* chain and stops at
+        owned top-level frames, which causes coordinates to be computed
+        relative to the frame rather than the outer application window.
+        """
         import ctypes
         if hwnd == 0:
             return 0
-        root = ctypes.windll.user32.GetAncestor(hwnd, 2)  # GA_ROOT
+        root = ctypes.windll.user32.GetAncestor(hwnd, 3)  # GA_ROOTOWNER
         return root if root else hwnd
 
     def _get_window_title(hwnd: int) -> str:
@@ -255,8 +262,8 @@ class Recorder:
                 return False
             # Check if the clicked window is the same as or a child of our own window
             import ctypes
-            ancestor_click = ctypes.windll.user32.GetAncestor(click_hwnd, 2)  # GA_ROOT
-            ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 2)
+            ancestor_click = ctypes.windll.user32.GetAncestor(click_hwnd, 3)  # GA_ROOTOWNER
+            ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 3)  # GA_ROOTOWNER
             return ancestor_click == ancestor_own
         except Exception:
             return False
@@ -270,8 +277,8 @@ class Recorder:
             if own_hwnd == 0:
                 return False
             import ctypes
-            ancestor_hwnd = ctypes.windll.user32.GetAncestor(hwnd, 2)  # GA_ROOT
-            ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 2)
+            ancestor_hwnd = ctypes.windll.user32.GetAncestor(hwnd, 3)  # GA_ROOTOWNER
+            ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 3)  # GA_ROOTOWNER
             return ancestor_hwnd == ancestor_own
         except Exception:
             return False
