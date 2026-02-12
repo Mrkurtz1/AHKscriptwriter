@@ -48,6 +48,7 @@ class AHKMacroBuilderApp:
             on_event=self._on_event_recorded,
             on_state_change=self._on_recording_state_change,
             get_own_hwnd=lambda: _get_tk_hwnd(self.root),
+            on_stop_hotkey=self._on_stop_hotkey,
         )
 
         self.replay_manager = ReplayManager(
@@ -117,10 +118,26 @@ class AHKMacroBuilderApp:
         self._recording_start_time = time.time()
         self._update_timer()
 
+        # Minimize to avoid occluding the target application ("dead zone")
+        self.root.title("AHK Macro Builder [RECORDING - Press F9 to stop]")
+        self.root.iconify()
+
+    def _on_stop_hotkey(self):
+        """Handle stop recording hotkey (called from listener thread)."""
+        self.root.after(0, self._stop_recording)
+
     def _stop_recording(self):
         """Stop the current recording session."""
+        if self.recorder.state == RecordingState.IDLE:
+            return  # Already stopped (e.g. hotkey + button pressed together)
+
         session = self.recorder.stop_recording()
         self._cancel_timer()
+
+        # Restore from minimized state
+        self.root.deiconify()
+        self.root.title("AHK Macro Builder")
+        self.root.lift()
 
         if session and session.events:
             # Generate code for this session and append to code window

@@ -244,11 +244,13 @@ class Recorder:
         on_event: Optional[Callable[[RecordedEvent], None]] = None,
         on_state_change: Optional[Callable[[RecordingState], None]] = None,
         get_own_hwnd: Optional[Callable[[], int]] = None,
+        on_stop_hotkey: Optional[Callable[[], None]] = None,
     ):
         self.settings = settings
         self.on_event = on_event
         self.on_state_change = on_state_change
         self.get_own_hwnd = get_own_hwnd  # callback to get the app's own window handle
+        self.on_stop_hotkey = on_stop_hotkey  # callback when stop hotkey is pressed
 
         self._state = RecordingState.IDLE
         self._session_counter = 0
@@ -262,6 +264,14 @@ class Recorder:
         # Movement recording
         self._last_move_time = 0.0
         self._last_move_pos = (0, 0)
+
+        # Stop recording hotkey (F9)
+        self._stop_key = None
+        try:
+            if pynput_keyboard:
+                self._stop_key = pynput_keyboard.Key.f9
+        except (AttributeError, TypeError):
+            pass
 
         # Listeners
         self._mouse_listener = None
@@ -562,6 +572,12 @@ class Recorder:
         try:
             if self._state != RecordingState.RECORDING:
                 return
+
+            # Check for stop recording hotkey (F9)
+            if self._stop_key is not None and key == self._stop_key:
+                if self.on_stop_hotkey:
+                    self.on_stop_hotkey()
+                return  # Don't record the hotkey as a keystroke
 
             # Convert key to string representation
             try:
