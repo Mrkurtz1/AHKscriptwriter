@@ -136,6 +136,61 @@ try:
             return False
         return rect.left <= x <= rect.right and rect.top <= y <= rect.bottom
 
+    def _find_app_window_at_point(x: int, y: int, exclude_hwnd: int = 0) -> int:
+        """Find the main application window containing screen point (x, y).
+
+        Enumerates top-level windows in z-order and returns the first
+        visible window with a title bar (``WS_CAPTION``) whose rectangle
+        contains the given point.
+
+        Nested content windows (embedded browser controls, framework panels,
+        etc.) are typically top-level windows with **no** formal parent/owner
+        chain back to the main application window **and** no title bar.
+        By requiring ``WS_CAPTION`` this function skips them and finds the
+        actual application frame instead.
+
+        Parameters:
+            x, y: Screen coordinates of the click.
+            exclude_hwnd: HWND to skip (e.g. the recorder tool's own window).
+        """
+        import ctypes
+        from ctypes import wintypes
+
+        GWL_STYLE = -16
+        WS_CAPTION = 0x00C00000
+        result = [0]
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def _enum_cb(hwnd, _lparam):
+            hwnd_val = int(hwnd) if hwnd else 0
+            if hwnd_val == 0:
+                return True
+            if exclude_hwnd and hwnd_val == exclude_hwnd:
+                return True
+            if not ctypes.windll.user32.IsWindowVisible(hwnd):
+                return True
+
+            rect = wintypes.RECT()
+            if not ctypes.windll.user32.GetWindowRect(
+                hwnd, ctypes.byref(rect)
+            ):
+                return True
+
+            if not (
+                rect.left <= x <= rect.right and rect.top <= y <= rect.bottom
+            ):
+                return True
+
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            if (style & WS_CAPTION) == WS_CAPTION:
+                result[0] = hwnd_val
+                return False  # found -- stop enumeration
+
+            return True
+
+        ctypes.windll.user32.EnumWindows(_enum_cb, 0)
+        return result[0]
+
 except (ImportError, AttributeError, OSError):
     def _get_window_under_cursor(x: int, y: int) -> int:
         return 0
@@ -160,6 +215,9 @@ except (ImportError, AttributeError, OSError):
 
     def _window_rect_contains(hwnd: int, x: int, y: int) -> bool:
         return False
+
+    def _find_app_window_at_point(x: int, y: int, exclude_hwnd: int = 0) -> int:
+        return 0
 
 
 def _pynput_button_to_model(button) -> Optional[MouseButton]:
@@ -312,11 +370,12 @@ class Recorder:
            client-relative values so the generated AHK script uses the
            correct offset regardless of where the window sits on screen.
 
-        For mouse events the foreground window is preferred when the click
-        falls within its bounds.  This avoids coordinate errors caused by
-        nested frames or embedded child windows that WindowFromPoint may
-        return and that GetAncestor(GA_ROOTOWNER) cannot always resolve
-        back to the main application window.
+        For mouse events the method uses ``EnumWindows`` to find the main
+        application window at the click point.  This avoids coordinate
+        errors caused by nested frames or embedded child windows that
+        both ``WindowFromPoint`` and ``GetForegroundWindow`` may return
+        and that ``GetAncestor(GA_ROOTOWNER)`` cannot always resolve back
+        to the outer application window.
         """
         if self.settings.coord_mode not in ("Window", "Client"):
             return
@@ -329,23 +388,26 @@ class Recorder:
             hwnd = _get_foreground_hwnd()
             hwnd = _get_root_hwnd(hwnd) if hwnd else 0
         else:
-            # Mouse events: prefer the foreground window when the click
-            # falls inside its bounds.  This ensures coordinates are
-            # always relative to the top-level application window even
-            # when the cursor is over a nested frame or child HWND that
-            # WindowFromPoint would otherwise return.
-            fg = _get_foreground_hwnd()
-            fg = _get_root_hwnd(fg) if fg else 0
-            if fg and _window_rect_contains(fg, event.x1, event.y1):
-                hwnd = fg
-            else:
-                # Click is outside the foreground window (e.g. a
-                # different application) -- fall back to the original
-                # WindowFromPoint approach.
-                hwnd = _get_window_under_cursor(event.x1, event.y1)
-                if hwnd == 0:
-                    hwnd = _get_foreground_hwnd()
-                hwnd = _get_root_hwnd(hwnd)
+            # Mouse events: enumerate top-level windows to find the main
+            # application window at the click point.  EnumWindows walks
+            # the z-order and we pick the first visible window with a
+            # title bar (WS_CAPTION) that contains the point.  Nested
+            # content windows (browser controls, framework panels, etc.)
+            # typically lack a title bar and are skipped automatically.
+            own_hwnd = 0
+            if self.get_own_hwnd:
+                try:
+                    own_hwnd = self.get_own_hwnd()
+                    own_hwnd = _get_root_hwnd(own_hwnd) if own_hwnd else 0
+                except Exception:
+                    own_hwnd = 0
+            hwnd = _find_app_window_at_point(
+                event.x1, event.y1, exclude_hwnd=own_hwnd,
+            )
+            if hwnd == 0:
+                # Fallback: foreground window (e.g. non-Windows platforms)
+                fg = _get_foreground_hwnd()
+                hwnd = _get_root_hwnd(fg) if fg else 0
 
         if hwnd == 0 or self._is_own_hwnd(hwnd):
             return
