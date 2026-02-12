@@ -54,13 +54,14 @@ class TestWindowModeCoordinateConversion:
     """When coord_mode=Window, screen coords should be converted to
     window-relative by subtracting the window origin."""
 
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="Notepad")
     @patch("src.recorder._screen_to_window", return_value=(100, 150))
     @patch("src.recorder._get_root_hwnd", return_value=12345)
     @patch("src.recorder._get_foreground_hwnd", return_value=12345)
     @patch("src.recorder._get_window_under_cursor", return_value=12345)
     def test_click_coords_converted(self, mock_wuc, mock_fg, mock_root,
-                                     mock_convert, mock_title):
+                                     mock_convert, mock_title, mock_contains):
         rec = _make_recorder(coord_mode="Window")
         event = _make_event(x1=500, y1=600)
 
@@ -71,13 +72,14 @@ class TestWindowModeCoordinateConversion:
         assert event.y1 == 150
         assert event.window_title == "Notepad"
 
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="Notepad")
     @patch("src.recorder._screen_to_window", side_effect=[(10, 20), (110, 220)])
     @patch("src.recorder._get_root_hwnd", return_value=12345)
     @patch("src.recorder._get_foreground_hwnd", return_value=12345)
     @patch("src.recorder._get_window_under_cursor", return_value=12345)
     def test_drag_both_coords_converted(self, mock_wuc, mock_fg, mock_root,
-                                         mock_convert, mock_title):
+                                         mock_convert, mock_title, mock_contains):
         rec = _make_recorder(coord_mode="Window")
         event = _make_event(
             event_type=EventType.DRAG,
@@ -98,6 +100,7 @@ class TestWindowModeCoordinateConversion:
 # ---------------------------------------------------------------------------
 
 class TestClientModeCoordinateConversion:
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="Notepad")
     @patch("src.recorder._screen_to_client", return_value=(80, 130))
     @patch("src.recorder._get_root_hwnd", return_value=12345)
@@ -105,7 +108,7 @@ class TestClientModeCoordinateConversion:
     @patch("src.recorder._get_window_under_cursor", return_value=12345)
     def test_client_mode_uses_screen_to_client(self, mock_wuc, mock_fg,
                                                 mock_root, mock_convert,
-                                                mock_title):
+                                                mock_title, mock_contains):
         rec = _make_recorder(coord_mode="Client")
         event = _make_event(x1=500, y1=600)
 
@@ -139,12 +142,14 @@ class TestScreenModeNoConversion:
 # ---------------------------------------------------------------------------
 
 class TestOwnWindowFiltering:
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="AHK Macro Builder")
     @patch("src.recorder._get_root_hwnd", return_value=999)
     @patch("src.recorder._get_foreground_hwnd", return_value=999)
     @patch("src.recorder._get_window_under_cursor", return_value=999)
     def test_own_window_hwnd_skips_conversion(self, mock_wuc, mock_fg,
-                                               mock_root, mock_title):
+                                               mock_root, mock_title,
+                                               mock_contains):
         """When the target HWND is our own window, skip title and conversion."""
         rec = _make_recorder(coord_mode="Window")
         # _is_own_hwnd checks GetAncestor which we need to mock
@@ -163,6 +168,7 @@ class TestOwnWindowFiltering:
 # ---------------------------------------------------------------------------
 
 class TestZeroHwndFallback:
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="Notepad")
     @patch("src.recorder._screen_to_window", return_value=(50, 50))
     @patch("src.recorder._get_root_hwnd", return_value=12345)
@@ -170,7 +176,7 @@ class TestZeroHwndFallback:
     @patch("src.recorder._get_window_under_cursor", return_value=0)
     def test_zero_cursor_hwnd_falls_back_to_foreground(self, mock_wuc, mock_fg,
                                                         mock_root, mock_convert,
-                                                        mock_title):
+                                                        mock_title, mock_contains):
         """If WindowFromPoint returns 0, fall back to GetForegroundWindow."""
         rec = _make_recorder(coord_mode="Window")
         event = _make_event(x1=500, y1=600)
@@ -203,13 +209,14 @@ class TestZeroHwndFallback:
 # ---------------------------------------------------------------------------
 
 class TestTargetWindowTitleAutoSet:
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="FirstWindow")
     @patch("src.recorder._screen_to_window", return_value=(50, 50))
     @patch("src.recorder._get_root_hwnd", return_value=12345)
     @patch("src.recorder._get_foreground_hwnd", return_value=12345)
     @patch("src.recorder._get_window_under_cursor", return_value=12345)
     def test_first_event_sets_target(self, mock_wuc, mock_fg, mock_root,
-                                      mock_convert, mock_title):
+                                      mock_convert, mock_title, mock_contains):
         rec = _make_recorder(coord_mode="Window", target_title="")
         event = _make_event()
 
@@ -217,13 +224,15 @@ class TestTargetWindowTitleAutoSet:
 
         assert rec.settings.target_window_title == "FirstWindow"
 
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="SecondWindow")
     @patch("src.recorder._screen_to_window", return_value=(50, 50))
     @patch("src.recorder._get_root_hwnd", return_value=12345)
     @patch("src.recorder._get_foreground_hwnd", return_value=12345)
     @patch("src.recorder._get_window_under_cursor", return_value=12345)
     def test_existing_target_not_overwritten(self, mock_wuc, mock_fg, mock_root,
-                                              mock_convert, mock_title):
+                                              mock_convert, mock_title,
+                                              mock_contains):
         rec = _make_recorder(coord_mode="Window", target_title="AlreadySet")
         event = _make_event()
 
@@ -237,6 +246,7 @@ class TestTargetWindowTitleAutoSet:
 # ---------------------------------------------------------------------------
 
 class TestEmptyWindowTitle:
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="")
     @patch("src.recorder._screen_to_window", return_value=(50, 50))
     @patch("src.recorder._get_root_hwnd", return_value=12345)
@@ -244,7 +254,7 @@ class TestEmptyWindowTitle:
     @patch("src.recorder._get_window_under_cursor", return_value=12345)
     def test_empty_title_still_converts_coords(self, mock_wuc, mock_fg,
                                                 mock_root, mock_convert,
-                                                mock_title):
+                                                mock_title, mock_contains):
         """Even if title is empty, coordinates should still be converted."""
         rec = _make_recorder(coord_mode="Window")
         event = _make_event(x1=500, y1=600)
@@ -280,47 +290,58 @@ class TestKeystrokeUseForeground:
 
 
 # ---------------------------------------------------------------------------
-# Nested frame / owned-window resolution
+# Nested frame / owned-window resolution -- foreground-preferred path
 # ---------------------------------------------------------------------------
 
 class TestNestedFrameResolution:
     """When clicking inside a frame (owned sub-window), coordinates should
-    be relative to the main application window, not the frame."""
+    be relative to the main application window, not the frame.
 
+    The recorder now prefers the foreground window for mouse events when
+    the click falls within its bounds, which bypasses the
+    WindowFromPoint -> GetAncestor(GA_ROOTOWNER) chain entirely.
+    """
+
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="MainApp")
     @patch("src.recorder._screen_to_window", return_value=(200, 100))
     @patch("src.recorder._get_root_hwnd", return_value=1000)
     @patch("src.recorder._get_foreground_hwnd", return_value=1000)
     @patch("src.recorder._get_window_under_cursor", return_value=5555)
-    def test_child_control_resolves_to_root_owner(self, mock_wuc, mock_fg,
+    def test_child_control_uses_foreground_window(self, mock_wuc, mock_fg,
                                                     mock_root, mock_convert,
-                                                    mock_title):
-        """WindowFromPoint returns a child control (5555), but _get_root_hwnd
-        should resolve it up to the main application window (1000) so that
-        coordinates are relative to the outer window, not an inner frame."""
+                                                    mock_title, mock_contains):
+        """WindowFromPoint returns a child control (5555), but the
+        foreground window (1000) is used directly because the click
+        falls within its bounds -- coordinates are relative to the
+        main application window."""
         rec = _make_recorder(coord_mode="Window")
         event = _make_event(x1=700, y1=500)
 
         rec._apply_window_context(event)
 
-        # _get_root_hwnd should have been called with the child hwnd
-        mock_root.assert_called_once_with(5555)
-        # Coordinates should be converted relative to root owner (1000)
+        # Foreground window used; _get_root_hwnd called with fg HWND
+        mock_root.assert_called_once_with(1000)
+        # WindowFromPoint is NOT consulted (foreground path short-circuits)
+        mock_wuc.assert_not_called()
+        # Coordinates relative to foreground / root owner (1000)
         mock_convert.assert_called_once_with(1000, 700, 500)
         assert event.x1 == 200
         assert event.y1 == 100
         assert event.window_title == "MainApp"
 
+    @patch("src.recorder._window_rect_contains", return_value=True)
     @patch("src.recorder._get_window_title", return_value="MainApp")
     @patch("src.recorder._screen_to_window", side_effect=[(200, 100), (400, 300)])
     @patch("src.recorder._get_root_hwnd", return_value=1000)
     @patch("src.recorder._get_foreground_hwnd", return_value=1000)
     @patch("src.recorder._get_window_under_cursor", return_value=5555)
-    def test_drag_in_frame_resolves_both_coords_to_root_owner(
-        self, mock_wuc, mock_fg, mock_root, mock_convert, mock_title
+    def test_drag_in_frame_uses_foreground_for_both_coords(
+        self, mock_wuc, mock_fg, mock_root, mock_convert, mock_title,
+        mock_contains,
     ):
         """Drag events inside a frame should convert both start and end
-        coordinates relative to the main application window."""
+        coordinates relative to the main application (foreground) window."""
         rec = _make_recorder(coord_mode="Window")
         event = _make_event(
             event_type=EventType.DRAG,
@@ -334,3 +355,62 @@ class TestNestedFrameResolution:
         assert event.y1 == 100
         assert event.x2 == 400
         assert event.y2 == 300
+
+
+# ---------------------------------------------------------------------------
+# Fallback to WindowFromPoint when click is outside the foreground window
+# ---------------------------------------------------------------------------
+
+class TestFallbackToWindowFromPoint:
+    """When the click point falls outside the foreground window's rect,
+    the recorder should fall back to the WindowFromPoint approach."""
+
+    @patch("src.recorder._window_rect_contains", return_value=False)
+    @patch("src.recorder._get_window_title", return_value="OtherApp")
+    @patch("src.recorder._screen_to_window", return_value=(30, 40))
+    @patch("src.recorder._get_root_hwnd", side_effect=lambda h: {2000: 2000, 3000: 3000}.get(h, h))
+    @patch("src.recorder._get_foreground_hwnd", return_value=2000)
+    @patch("src.recorder._get_window_under_cursor", return_value=3000)
+    def test_click_outside_fg_uses_window_from_point(
+        self, mock_wuc, mock_fg, mock_root, mock_convert, mock_title,
+        mock_contains,
+    ):
+        """Click outside the foreground window should use WindowFromPoint."""
+        rec = _make_recorder(coord_mode="Window")
+        event = _make_event(x1=1500, y1=800)
+
+        rec._apply_window_context(event)
+
+        # _window_rect_contains returned False for foreground, so
+        # WindowFromPoint is used instead.
+        mock_wuc.assert_called_once_with(1500, 800)
+        # _get_root_hwnd is called for the fg check and then for the
+        # WindowFromPoint result.
+        assert mock_root.call_count == 2
+        # Coordinates converted relative to the WindowFromPoint root (3000)
+        mock_convert.assert_called_once_with(3000, 1500, 800)
+        assert event.x1 == 30
+        assert event.y1 == 40
+
+    @patch("src.recorder._window_rect_contains", return_value=False)
+    @patch("src.recorder._get_window_title", return_value="FallbackApp")
+    @patch("src.recorder._screen_to_window", return_value=(10, 20))
+    @patch("src.recorder._get_root_hwnd", side_effect=lambda h: {2000: 2000, 0: 0, 4000: 4000}.get(h, h))
+    @patch("src.recorder._get_foreground_hwnd", return_value=2000)
+    @patch("src.recorder._get_window_under_cursor", return_value=0)
+    def test_click_outside_fg_and_wuc_zero_falls_back_to_fg(
+        self, mock_wuc, mock_fg, mock_root, mock_convert, mock_title,
+        mock_contains,
+    ):
+        """If click is outside fg rect AND WindowFromPoint returns 0,
+        fall back to GetForegroundWindow for the conversion."""
+        rec = _make_recorder(coord_mode="Window")
+        event = _make_event(x1=1500, y1=800)
+
+        rec._apply_window_context(event)
+
+        # WindowFromPoint returned 0, so we fall back to foreground
+        assert mock_fg.call_count >= 2  # once for fg check, once for fallback
+        mock_convert.assert_called_once_with(2000, 1500, 800)
+        assert event.x1 == 10
+        assert event.y1 == 20

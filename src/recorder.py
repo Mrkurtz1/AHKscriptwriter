@@ -121,6 +121,21 @@ try:
             return (x, y)
         return (point.x, point.y)
 
+    def _window_rect_contains(hwnd: int, x: int, y: int) -> bool:
+        """Return True if screen point (x, y) lies within *hwnd*'s window rect.
+
+        Used to verify that a mouse click falls inside the foreground window
+        so we can use it as the coordinate reference instead of relying on
+        WindowFromPoint, which may return nested child / frame HWNDs.
+        """
+        import ctypes
+        if hwnd == 0:
+            return False
+        rect = ctypes.wintypes.RECT()
+        if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return False
+        return rect.left <= x <= rect.right and rect.top <= y <= rect.bottom
+
 except (ImportError, AttributeError, OSError):
     def _get_window_under_cursor(x: int, y: int) -> int:
         return 0
@@ -142,6 +157,9 @@ except (ImportError, AttributeError, OSError):
 
     def _screen_to_client(hwnd: int, x: int, y: int) -> tuple:
         return (x, y)
+
+    def _window_rect_contains(hwnd: int, x: int, y: int) -> bool:
+        return False
 
 
 def _pynput_button_to_model(button) -> Optional[MouseButton]:
@@ -293,6 +311,12 @@ class Recorder:
         3. Converts the event's screen coordinates to window-relative or
            client-relative values so the generated AHK script uses the
            correct offset regardless of where the window sits on screen.
+
+        For mouse events the foreground window is preferred when the click
+        falls within its bounds.  This avoids coordinate errors caused by
+        nested frames or embedded child windows that WindowFromPoint may
+        return and that GetAncestor(GA_ROOTOWNER) cannot always resolve
+        back to the main application window.
         """
         if self.settings.coord_mode not in ("Window", "Client"):
             return
@@ -300,14 +324,28 @@ class Recorder:
         prefer_foreground = event.event_type == EventType.KEYSTROKE
 
         # Resolve the target window HWND
-        hwnd = (
-            _get_foreground_hwnd()
-            if prefer_foreground
-            else _get_window_under_cursor(event.x1, event.y1)
-        )
-        if hwnd == 0:
+        if prefer_foreground:
+            # Keystrokes: always use the foreground window.
             hwnd = _get_foreground_hwnd()
-        hwnd = _get_root_hwnd(hwnd)
+            hwnd = _get_root_hwnd(hwnd) if hwnd else 0
+        else:
+            # Mouse events: prefer the foreground window when the click
+            # falls inside its bounds.  This ensures coordinates are
+            # always relative to the top-level application window even
+            # when the cursor is over a nested frame or child HWND that
+            # WindowFromPoint would otherwise return.
+            fg = _get_foreground_hwnd()
+            fg = _get_root_hwnd(fg) if fg else 0
+            if fg and _window_rect_contains(fg, event.x1, event.y1):
+                hwnd = fg
+            else:
+                # Click is outside the foreground window (e.g. a
+                # different application) -- fall back to the original
+                # WindowFromPoint approach.
+                hwnd = _get_window_under_cursor(event.x1, event.y1)
+                if hwnd == 0:
+                    hwnd = _get_foreground_hwnd()
+                hwnd = _get_root_hwnd(hwnd)
 
         if hwnd == 0 or self._is_own_hwnd(hwnd):
             return
