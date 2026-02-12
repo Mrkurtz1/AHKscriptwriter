@@ -461,121 +461,133 @@ class Recorder:
 
     def _on_move(self, x: int, y: int):
         """Handle mouse movement."""
-        self._current_pos = (x, y)
+        try:
+            self._current_pos = (x, y)
 
-        if self._state != RecordingState.RECORDING:
-            return
+            if self._state != RecordingState.RECORDING:
+                return
 
-        # Check if any button is pressed - update drag tracking
-        for button, info in list(self._press_info.items()):
-            if not self._drag_active.get(button, False):
-                px, py = info[0], info[1]
-                dist = math.hypot(x - px, y - py)
-                if dist >= self.settings.drag_threshold_px:
-                    self._drag_active[button] = True
+            # Check if any button is pressed - update drag tracking
+            for button, info in list(self._press_info.items()):
+                if not self._drag_active.get(button, False):
+                    px, py = info[0], info[1]
+                    dist = math.hypot(x - px, y - py)
+                    if dist >= self.settings.drag_threshold_px:
+                        self._drag_active[button] = True
 
-        # Optional movement recording
-        if not self.settings.record_mouse_moves:
-            return
+            # Optional movement recording
+            if not self.settings.record_mouse_moves:
+                return
 
-        now = time.time()
-        elapsed_ms = (now - self._last_move_time) * 1000
-        if elapsed_ms < self.settings.mouse_move_sample_ms:
-            return
+            now = time.time()
+            elapsed_ms = (now - self._last_move_time) * 1000
+            if elapsed_ms < self.settings.mouse_move_sample_ms:
+                return
 
-        dist = math.hypot(x - self._last_move_pos[0], y - self._last_move_pos[1])
-        if dist < 2:
-            return
+            dist = math.hypot(x - self._last_move_pos[0], y - self._last_move_pos[1])
+            if dist < 2:
+                return
 
-        self._last_move_time = now
-        self._last_move_pos = (x, y)
+            self._last_move_time = now
+            self._last_move_pos = (x, y)
 
-        event = RecordedEvent(
-            timestamp=now,
-            event_type=EventType.MOVE,
-            button=MouseButton.LEFT,
-            x1=x,
-            y1=y,
-        )
-        self._emit_event(event)
+            event = RecordedEvent(
+                timestamp=now,
+                event_type=EventType.MOVE,
+                button=MouseButton.LEFT,
+                x1=x,
+                y1=y,
+            )
+            self._emit_event(event)
+        except Exception:
+            pass  # Never let exceptions kill the pynput listener
 
     def _on_click(self, x: int, y: int, button, pressed: bool):
         """Handle mouse button press/release."""
-        if self._state != RecordingState.RECORDING:
-            return
-
-        # Filter out clicks on our own window
-        if pressed and self._is_own_window(x, y):
-            return
-
-        mb = _pynput_button_to_model(button)
-        if mb is None:
-            return
-
-        if pressed:
-            # Button pressed: record position and color, begin tracking
-            color = get_pixel_color(x, y)
-            self._press_info[mb] = (x, y, time.time(), color)
-            self._drag_active[mb] = False
-        else:
-            # Button released
-            info = self._press_info.pop(mb, None)
-            if info is None:
+        try:
+            if self._state != RecordingState.RECORDING:
                 return
 
-            start_x, start_y, press_time, start_color = info
-            is_drag = self._drag_active.pop(mb, False)
+            # Filter out clicks on our own window
+            if pressed and self._is_own_window(x, y):
+                return
 
-            if is_drag:
-                end_color = get_pixel_color(x, y)
-                event = RecordedEvent(
-                    timestamp=press_time,
-                    event_type=EventType.DRAG,
-                    button=mb,
-                    x1=start_x,
-                    y1=start_y,
-                    x2=x,
-                    y2=y,
-                    color1=start_color,
-                    color2=end_color,
-                )
+            mb = _pynput_button_to_model(button)
+            if mb is None:
+                return
+
+            if pressed:
+                # Button pressed: record position and color, begin tracking
+                color = get_pixel_color(x, y)
+                self._press_info[mb] = (x, y, time.time(), color)
+                self._drag_active[mb] = False
             else:
-                event = RecordedEvent(
-                    timestamp=press_time,
-                    event_type=EventType.CLICK,
-                    button=mb,
-                    x1=start_x,
-                    y1=start_y,
-                    color1=start_color,
-                )
+                # Button released
+                info = self._press_info.pop(mb, None)
+                if info is None:
+                    return
 
-            self._emit_event(event)
+                start_x, start_y, press_time, start_color = info
+                is_drag = self._drag_active.pop(mb, False)
+
+                if is_drag:
+                    end_color = get_pixel_color(x, y)
+                    event = RecordedEvent(
+                        timestamp=press_time,
+                        event_type=EventType.DRAG,
+                        button=mb,
+                        x1=start_x,
+                        y1=start_y,
+                        x2=x,
+                        y2=y,
+                        color1=start_color,
+                        color2=end_color,
+                    )
+                else:
+                    event = RecordedEvent(
+                        timestamp=press_time,
+                        event_type=EventType.CLICK,
+                        button=mb,
+                        x1=start_x,
+                        y1=start_y,
+                        color1=start_color,
+                    )
+
+                self._emit_event(event)
+        except Exception:
+            pass  # Never let exceptions kill the pynput listener
 
     def _on_key_press(self, key):
         """Handle keyboard key press."""
-        if self._state != RecordingState.RECORDING:
-            return
-
-        # Convert key to string representation
         try:
-            # Printable character keys
-            key_text = repr(key.char) if hasattr(key, 'char') and key.char else str(key)
-        except AttributeError:
-            key_text = str(key)
+            if self._state != RecordingState.RECORDING:
+                return
 
-        event = RecordedEvent(
-            timestamp=time.time(),
-            event_type=EventType.KEYSTROKE,
-            button=MouseButton.LEFT,  # unused for keystrokes
-            x1=self._current_pos[0],
-            y1=self._current_pos[1],
-            key_text=key_text,
-        )
-        self._emit_event(event)
+            # Convert key to string representation
+            try:
+                # Printable character keys
+                key_text = repr(key.char) if hasattr(key, 'char') and key.char else str(key)
+            except AttributeError:
+                key_text = str(key)
+
+            event = RecordedEvent(
+                timestamp=time.time(),
+                event_type=EventType.KEYSTROKE,
+                button=MouseButton.LEFT,  # unused for keystrokes
+                x1=self._current_pos[0],
+                y1=self._current_pos[1],
+                key_text=key_text,
+            )
+            self._emit_event(event)
+        except Exception:
+            pass  # Never let exceptions kill the pynput listener
 
     def _emit_event(self, event: RecordedEvent):
         """Add event to session and notify callback."""
-        self._apply_window_context(event)
+        try:
+            self._apply_window_context(event)
+        except Exception:
+            pass  # Emit event with unconverted coords rather than losing it
         if self._current_session:
             self._current_session.add_event(event)
         if self.on_event:
