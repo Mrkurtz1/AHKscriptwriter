@@ -15,9 +15,17 @@ class EventLogPanel(ttk.Frame):
         self._build_ui()
 
     def _build_ui(self):
-        # Header
-        header = ttk.Label(self, text="Event Log", font=("Segoe UI", 10, "bold"))
-        header.pack(fill=tk.X, padx=5, pady=(5, 2))
+        # Header row with label and clear button
+        header_frame = ttk.Frame(self)
+        header_frame.pack(fill=tk.X, padx=5, pady=(5, 2))
+
+        header = ttk.Label(header_frame, text="Event Log", font=("Segoe UI", 10, "bold"))
+        header.pack(side=tk.LEFT)
+
+        self._clear_btn = ttk.Button(
+            header_frame, text="Clear", width=5, command=self.clear,
+        )
+        self._clear_btn.pack(side=tk.RIGHT)
 
         # Treeview for events
         columns = ("index", "type", "details")
