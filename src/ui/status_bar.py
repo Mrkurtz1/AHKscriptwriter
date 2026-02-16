@@ -16,8 +16,12 @@ class StatusBar(ttk.Frame):
     def _build_ui(self):
         self.configure(relief=tk.SUNKEN, borderwidth=1)
 
+        # Main status row
+        self._main_row = ttk.Frame(self)
+        self._main_row.pack(fill=tk.X)
+
         # Recording state indicator
-        self._state_frame = ttk.Frame(self)
+        self._state_frame = ttk.Frame(self._main_row)
         self._state_frame.pack(side=tk.LEFT, padx=5, pady=2)
 
         self._recording_dot = tk.Canvas(
@@ -29,33 +33,41 @@ class StatusBar(ttk.Frame):
         self._state_label = ttk.Label(self._state_frame, text="Idle", width=12)
         self._state_label.pack(side=tk.LEFT)
 
-        ttk.Separator(self, orient=tk.VERTICAL).pack(
+        ttk.Separator(self._main_row, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=5, pady=2
         )
 
         # Coordinate mode
-        self._coord_label = ttk.Label(self, text="Mode: Screen", width=16)
+        self._coord_label = ttk.Label(self._main_row, text="Mode: Screen", width=16)
         self._coord_label.pack(side=tk.LEFT, padx=5, pady=2)
 
-        ttk.Separator(self, orient=tk.VERTICAL).pack(
+        ttk.Separator(self._main_row, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=5, pady=2
         )
 
         # Last captured info
-        self._capture_label = ttk.Label(self, text="Last: --", width=35)
+        self._capture_label = ttk.Label(self._main_row, text="Last: --", width=35)
         self._capture_label.pack(side=tk.LEFT, padx=5, pady=2)
 
-        ttk.Separator(self, orient=tk.VERTICAL).pack(
+        ttk.Separator(self._main_row, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=5, pady=2
         )
 
         # Replay status
-        self._replay_label = ttk.Label(self, text="Replay: Idle", width=25)
+        self._replay_label = ttk.Label(self._main_row, text="Replay: Idle", width=25)
         self._replay_label.pack(side=tk.LEFT, padx=5, pady=2)
 
         # Timer (right-aligned)
-        self._timer_label = ttk.Label(self, text="", width=10, anchor=tk.E)
+        self._timer_label = ttk.Label(self._main_row, text="", width=10, anchor=tk.E)
         self._timer_label.pack(side=tk.RIGHT, padx=5, pady=2)
+
+        # Command display row (hidden by default, shown during replay)
+        self._command_frame = ttk.Frame(self)
+        self._command_label = ttk.Label(
+            self._command_frame, text="", font=("Consolas", 8),
+            foreground="gray",
+        )
+        self._command_label.pack(side=tk.LEFT, fill=tk.X, padx=5, pady=(0, 2))
 
     def set_recording_state(self, state: RecordingState):
         """Update the recording state indicator."""
@@ -78,6 +90,15 @@ class StatusBar(ttk.Frame):
     def set_replay_status(self, status: str):
         """Update the replay status text."""
         self._replay_label.config(text=f"Replay: {status}")
+
+    def set_replay_command(self, command: str):
+        """Show or hide the replay command display at the bottom."""
+        if command:
+            self._command_label.config(text=f"Cmd: {command}")
+            self._command_frame.pack(fill=tk.X)
+        else:
+            self._command_label.config(text="")
+            self._command_frame.pack_forget()
 
     def set_timer(self, text: str):
         """Update the timer display."""
