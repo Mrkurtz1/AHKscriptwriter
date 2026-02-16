@@ -61,6 +61,7 @@ class AHKMacroBuilderApp:
 
         self._build_ui()
         self._apply_settings()
+        self._bind_hotkeys()
 
     def _build_ui(self):
         """Build the main application layout."""
@@ -95,6 +96,16 @@ class AHKMacroBuilderApp:
         # Status bar
         self.status_bar = StatusBar(self.root)
         self.status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+    def _bind_hotkeys(self):
+        """Register global keyboard shortcuts."""
+        self.root.bind_all("<Control-Shift-P>", self._on_abort_replay_hotkey)
+        self.root.bind_all("<Control-Shift-p>", self._on_abort_replay_hotkey)
+
+    def _on_abort_replay_hotkey(self, event=None):
+        """Handle Ctrl+Shift+P to abort a running replay."""
+        if self.replay_manager.is_running:
+            self._stop_replay()
 
     def _apply_settings(self):
         """Apply current settings to UI and components."""
@@ -216,6 +227,11 @@ class AHKMacroBuilderApp:
         """Update UI for replay status on the main thread."""
         self.status_bar.set_replay_status(status.value)
         self.toolbar.set_replay_state(status == ReplayStatus.RUNNING)
+
+        if status == ReplayStatus.RUNNING:
+            self.status_bar.set_replay_command(self.replay_manager.last_command)
+        else:
+            self.status_bar.set_replay_command("")
 
         if status == ReplayStatus.ERROR:
             messagebox.showerror("Replay Error", message)

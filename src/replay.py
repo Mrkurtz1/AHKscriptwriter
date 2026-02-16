@@ -29,6 +29,7 @@ class ReplayManager:
         self._status = ReplayStatus.IDLE
         self._process: Optional[subprocess.Popen] = None
         self._thread: Optional[threading.Thread] = None
+        self.last_command: str = ""
 
     @property
     def status(self) -> ReplayStatus:
@@ -115,14 +116,15 @@ class ReplayManager:
         """Run the script in a subprocess (called from a background thread)."""
         tmp_file = None
         try:
-            self._set_status(ReplayStatus.RUNNING, "Replay started...")
-
             # Write script to a temp file
             tmp_file = tempfile.NamedTemporaryFile(
                 mode="w", suffix=".ahk", delete=False, encoding="utf-8"
             )
             tmp_file.write(script_text)
             tmp_file.close()
+
+            self.last_command = f'"{ahk_path}" "{tmp_file.name}"'
+            self._set_status(ReplayStatus.RUNNING, "Replay started...")
 
             self._process = subprocess.Popen(
                 [ahk_path, tmp_file.name],
