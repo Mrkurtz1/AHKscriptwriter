@@ -17,11 +17,40 @@ from src.ui.status_bar import StatusBar
 from src.ui.settings_dialog import SettingsDialog
 
 
+# ---------------------------------------------------------------------------
+# DPI awareness -- must be set before creating any windows.
+#
+# Without this, GetWindowRect / WindowFromPoint may return coordinates in
+# a different scale than pynput delivers on high-DPI displays.  The
+# mismatch grows toward the lower-right corner and creates a dead zone
+# where _find_app_window_at_point fails to match any window.
+# ---------------------------------------------------------------------------
+try:
+    import ctypes
+
+    # Prefer Per-Monitor V2 (Windows 10 1703+)
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except (AttributeError, OSError):
+        # Fallback for older Windows versions
+        ctypes.windll.user32.SetProcessDPIAware()
+except Exception:
+    pass  # Non-Windows or ctypes unavailable
+
+
 def _get_tk_hwnd(root: tk.Tk) -> int:
-    """Get the Win32 HWND of the tkinter root window (Windows only)."""
+    """Get the Win32 HWND of the tkinter root window (Windows only).
+
+    Uses GetAncestor(GA_ROOTOWNER) instead of GetParent so that we
+    reliably resolve to the top-level window regardless of how many
+    intermediate frames tkinter inserts.  GetParent can return 0 or
+    an intermediate frame HWND in some configurations, which breaks
+    own-window detection and creates dead zones.
+    """
     try:
         import ctypes
-        return ctypes.windll.user32.GetParent(root.winfo_id())
+        GA_ROOTOWNER = 3
+        return ctypes.windll.user32.GetAncestor(root.winfo_id(), GA_ROOTOWNER)
     except Exception:
         return 0
 

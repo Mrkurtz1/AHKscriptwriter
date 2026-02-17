@@ -127,6 +127,10 @@ try:
         Used to verify that a mouse click falls inside the foreground window
         so we can use it as the coordinate reference instead of relying on
         WindowFromPoint, which may return nested child / frame HWNDs.
+
+        Note: Win32 ``GetWindowRect`` RECT uses exclusive right/bottom
+        (one pixel past the last pixel), so the comparison must use
+        strict ``<`` for those edges.
         """
         import ctypes
         if hwnd == 0:
@@ -134,7 +138,7 @@ try:
         rect = ctypes.wintypes.RECT()
         if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
             return False
-        return rect.left <= x <= rect.right and rect.top <= y <= rect.bottom
+        return rect.left <= x < rect.right and rect.top <= y < rect.bottom
 
     def _find_app_window_at_point(x: int, y: int, exclude_hwnd: int = 0) -> int:
         """Find the main application window containing screen point (x, y).
@@ -176,8 +180,11 @@ try:
             ):
                 return True
 
+            # Win32 RECT right/bottom are exclusive (one past the last
+            # pixel), so use strict '<' to avoid matching points that
+            # fall one pixel outside the window's actual area.
             if not (
-                rect.left <= x <= rect.right and rect.top <= y <= rect.bottom
+                rect.left <= x < rect.right and rect.top <= y < rect.bottom
             ):
                 return True
 
@@ -340,6 +347,10 @@ class Recorder:
             import ctypes
             ancestor_click = ctypes.windll.user32.GetAncestor(click_hwnd, 3)  # GA_ROOTOWNER
             ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 3)  # GA_ROOTOWNER
+            # Guard: if either ancestor resolved to 0 the comparison is
+            # meaningless and would incorrectly match (0 == 0).
+            if ancestor_own == 0 or ancestor_click == 0:
+                return False
             return ancestor_click == ancestor_own
         except Exception:
             return False
@@ -355,6 +366,9 @@ class Recorder:
             import ctypes
             ancestor_hwnd = ctypes.windll.user32.GetAncestor(hwnd, 3)  # GA_ROOTOWNER
             ancestor_own = ctypes.windll.user32.GetAncestor(own_hwnd, 3)  # GA_ROOTOWNER
+            # Guard: 0 == 0 would be a false positive.
+            if ancestor_own == 0 or ancestor_hwnd == 0:
+                return False
             return ancestor_hwnd == ancestor_own
         except Exception:
             return False
